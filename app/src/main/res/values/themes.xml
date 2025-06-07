@@ -1,0 +1,29 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Base application theme. -->
+    <style name="Theme.Cassette" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="android:windowFullscreen">false</item>
+        <!-- Primary brand color. -->
+        <item name="colorPrimary">@color/salmon</item>
+        <item name="colorPrimaryVariant">@color/purple_700</item>
+        <item name="colorOnPrimary">@color/salmon</item>
+        <!-- Secondary brand color. -->
+        <item name="colorSecondary">@color/teal_200</item>
+        <item name="colorSecondaryVariant">@color/teal_700</item>
+        <item name="colorOnSecondary">@color/black</item>
+        <!-- Status bar color. -->
+        <item name="android:statusBarColor">@color/salmon</item>
+        <!-- Customize your theme here. -->
+    </style>
+
+    <style name="Theme.Cassette.Splash" parent="Theme.SplashScreen">
+        <!-- Splash screen background color -->
+        <item name="windowSplashScreenBackground">@color/salmon</item>
+        <!-- Splash screen icon -->
+        <item name="windowSplashScreenAnimatedIcon">@drawable/casette</item>
+        <!-- Icon background color (circle behind icon) -->
+        <item name="windowSplashScreenIconBackgroundColor">@color/salmon</item>
+        <!-- Status bar color while splash screen is visible -->
+        <item name="postSplashScreenTheme">@style/Theme.Cassette</item>
+    </style>
+
+</resources>

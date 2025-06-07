@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/mobile_navigation"
+    app:startDestination="@+id/navigation_home">
+
+    <fragment
+        android:id="@+id/navigation_home"
+        android:name="com.example.cassette.ui.home.HomeFragment"
+        android:label="@string/title_home"
+        tools:layout="@layout/fragment_home" />
+
+    <fragment
+        android:id="@+id/navigation_playlist"
+        android:name="com.example.cassette.ui.dashboard.PlayListFragment"
+        android:label="@string/playlist"
+        tools:layout="@layout/fragment_play_list" />
+
+    <fragment
+        android:id="@+id/navigation_search"
+        android:name="com.example.cassette.ui.dashboard.SearchFragment"
+        android:label="@string/search"
+        tools:layout="@layout/fragment_search" />
+
+    <fragment
+        android:id="@+id/navigation_settings"
+        android:name="com.example.cassette.ui.dashboard.SettingsFragment"
+        android:label="@string/settings"
+        tools:layout="@layout/fragment_settings" />
+
+    <fragment
+        android:id="@+id/navigation_song_playing"
+        android:name="com.example.cassette.ui.SongPlayingFragment"
+        android:label="Now Playing"
+        tools:layout="@layout/fragment_song_playing">
+
+        <argument
+            android:name="songData"
+            app:argType="com.example.cassette.data.Songs"  app:nullable="false" />
+        <argument
+            android:name="songPosition"
+            app:argType="integer"
+            android:defaultValue="0" />
+        <argument
+            android:name="songList"
+            app:argType="com.example.cassette.data.Songs[]" app:nullable="true" />
+
+    </fragment>
+
+</navigation>
