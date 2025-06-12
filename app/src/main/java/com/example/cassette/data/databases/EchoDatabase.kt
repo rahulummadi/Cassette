@@ -1,4 +1,4 @@
-package com.example.cassette.data.databases // <--- This is the CORRECTED PACKAGE
+package com.example.cassette.data.databases
 
 import android.content.ContentValues
 import android.content.Context
@@ -10,8 +10,8 @@ import java.util.ArrayList
 
 class EchoDatabase : SQLiteOpenHelper {
 
-    // This _songList variable will be used in queryDBList, keep it
-    var _songList = ArrayList<Songs>() // Used for FavouriteTable queries
+
+    var _songList = ArrayList<Songs>()
 
     object Staticated {
         var DB_VERSION = 2 // INCREMENTED DATABASE VERSION FOR SCHEMA CHANGES

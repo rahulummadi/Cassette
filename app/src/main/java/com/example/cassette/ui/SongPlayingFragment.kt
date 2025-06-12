@@ -1,7 +1,9 @@
-package com.example.cassette.ui // MAKE SURE THIS PACKAGE IS CORRECT FOR YOUR FILE LOCATION
+package com.example.cassette.ui
 
+import android.content.ContentUris
 import android.content.Context
 import android.media.MediaPlayer
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -17,20 +19,23 @@ import android.widget.Toast
 import androidx.fragment.app.Fragment
 import com.bumptech.glide.Glide
 import com.cleveroad.audiovisualization.GLAudioVisualizationView
-import com.example.cassette.R // Ensure your R file is imported
-import com.example.cassette.databinding.FragmentSongPlayingBinding // This will be generated after building
-import com.example.cassette.data.Songs // Import your Songs data class
+import com.example.cassette.R
+import com.example.cassette.databinding.FragmentSongPlayingBinding
+import com.example.cassette.data.Songs
+import com.example.cassette.data.CurrentSongHelper
+import com.example.cassette.data.databases.EchoDatabase
+import java.util.ArrayList
+import java.util.Random
 import java.util.concurrent.TimeUnit
-import android.content.ContentUris // This is needed for ContentUris
-import android.net.Uri // This is needed for Uri.parse
+import androidx.core.content.ContextCompat
 
 class SongPlayingFragment : Fragment() {
 
-    // View Binding property
+    // View Binding property (local to fragment instance)
     private var _binding: FragmentSongPlayingBinding? = null
     private val binding get() = _binding!!
 
-    // UI elements from fragment_song_playing.xml
+    // UI elements from fragment_song_playing.xml (local to fragment instance)
     var visualizerView: GLAudioVisualizationView? = null
     var favouriteIcon: ImageButton? = null
     var songTitle: TextView? = null
@@ -43,18 +48,199 @@ class SongPlayingFragment : Fragment() {
     var nextButton: ImageButton? = null
     var loopButton: ImageButton? = null
     var shuffleButton: ImageButton? = null
-    var bigCoverArtImageView: ImageView? = null // For the new big cover art ImageView
+    var bigCoverArtImageView: ImageView? = null
 
-    // MediaPlayer and song data
-    var myActivity: Context? = null // Use Context as Fragment's context is more reliable
-    var mPlayer: MediaPlayer? = null
-    var currentSong: Songs? = null // To hold the currently playing song's data
-    var currentPosition: Int = 0 // To hold the position in the original song list
-    var songList: Array<Songs>? = null // To hold the full song list passed from HomeFragment
+    // Companion object to hold global playback state and methods
+    companion object Statified {
+        // Global MediaPlayer instance
+        var mPlayer: MediaPlayer? = null
 
-    // Handler for seek bar updates
-    private var updateSeekBarHandler: Handler = Handler(Looper.getMainLooper())
+        // Global song data
+        var currentSong: Songs? = null
+        var currentPosition: Int = 0 // Position in the songList
+        var songList: ArrayList<Songs>? = null // The full list of songs
 
+        // Global helper for tracking song state
+        var currentSongHelper: CurrentSongHelper? = null
+
+        // Global database for favorites
+        var favouriteContent: EchoDatabase? = null
+        lateinit var myActivity: Context
+
+        // Global handler for seek bar updates
+        var updateSeekBarHandler: Handler = Handler(Looper.getMainLooper())
+
+        // Global runnable for seek bar updates
+        var updateSeekBarRunnable: Runnable? = null // Will be initialized later in fragment instance
+
+        // Global context (initialized in onAttach)
+        var myContext: Context? = null
+
+
+        // --- Playback Control Functions (now static/global via Statified) ---
+        fun playSong(context: Context, song: Songs) { // Context is passed directly to avoid NullPointer
+            mPlayer?.release()
+            mPlayer = null
+
+            try {
+                mPlayer = MediaPlayer().apply {
+                    setDataSource(context, ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, song.songID))
+                    prepareAsync()
+                    setOnPreparedListener { player ->
+                        player.start()
+                        // UI updates handled by fragment instance
+                    }
+                    setOnCompletionListener {
+                        onSongComplete()
+                    }
+                    setOnErrorListener { _, what, extra ->
+                        Toast.makeText(context, "Playback error: $what, $extra", Toast.LENGTH_LONG).show()
+                        false
+                    }
+                }
+                Statified.currentSong = song
+            } catch (e: Exception) {
+                e.printStackTrace()
+                Toast.makeText(context, "Error playing song: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+
+        fun pauseSong() {
+            mPlayer?.pause()
+            updateSeekBarHandler.removeCallbacks(updateSeekBarRunnable!!)
+            currentSongHelper?.isPlaying = false
+        }
+
+        fun resumeSong() {
+            mPlayer?.start()
+            updateSeekBarHandler.postDelayed(updateSeekBarRunnable!!, 0)
+            currentSongHelper?.isPlaying = true
+        }
+
+        fun onSongComplete() {
+            currentSongHelper?.let { helper ->
+                if (helper.isShuffle == true) {
+                    playNextSong(true)
+                    helper.isPlaying = true
+                } else {
+                    if (helper.isLoop == true) {
+                        playSong(Statified.myContext!!, currentSong!!) // Use Statified.myContext here
+                        helper.isPlaying = true
+                    }
+                    else {
+                        playNextSong(false)
+                        helper.isPlaying = true
+                    }
+                }
+            }
+        }
+
+        fun playNextSong(isShuffle: Boolean = false) {
+            songList?.let { list ->
+                if (list.isNotEmpty()) {
+                    val nextPosition = if (isShuffle) {
+                        Random().nextInt(list.size)
+                    } else {
+                        (currentPosition + 1) % list.size
+                    }
+                    if (!isShuffle && nextPosition == list.size) {
+                        Statified.currentPosition = 0
+                    } else {
+                        Statified.currentPosition = nextPosition
+                    }
+                    Statified.currentSong = list[Statified.currentPosition]
+
+                    currentSongHelper?.songTitle = Statified.currentSong?.songTitle
+                    currentSongHelper?.songPath = Statified.currentSong?.songData
+                    currentSongHelper?.songId = Statified.currentSong?.songID ?: 0L
+                    currentSongHelper?.currentPosition = Statified.currentPosition
+                    currentSongHelper?.artist = Statified.currentSong?.artist
+
+                    playSong(Statified.myContext!!, Statified.currentSong!!) // Use Statified.myContext here
+                } else {
+                    Toast.makeText(Statified.myContext, "No more songs in list!", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+
+        fun playPreviousSong() {
+            songList?.let { list ->
+                if (list.isNotEmpty()) {
+                    val prevPosition = if (Statified.currentPosition - 1 < 0) list.size - 1 else Statified.currentPosition - 1
+                    Statified.currentPosition = prevPosition
+                    Statified.currentSong = list[prevPosition]
+
+                    currentSongHelper?.songTitle = Statified.currentSong?.songTitle
+                    currentSongHelper?.songPath = Statified.currentSong?.songData
+                    currentSongHelper?.songId = Statified.currentSong?.songID ?: 0L
+                    currentSongHelper?.currentPosition = Statified.currentPosition
+                    currentSongHelper?.artist = Statified.currentSong?.artist
+
+                    playSong(Statified.myContext!!, Statified.currentSong!!) // Use Statified.myContext here
+                } else {
+                    Toast.makeText(Statified.myContext, "No more songs in list!", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+
+        fun toggleLoop() {
+            currentSongHelper?.isLoop = !(currentSongHelper?.isLoop ?: false)
+            if (currentSongHelper?.isLoop == true) {
+                Toast.makeText(Statified.myContext, "Loop Enabled", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(Statified.myContext, "Loop Disabled", Toast.LENGTH_SHORT).show()
+            }
+            currentSongHelper?.isShuffle = false
+        }
+
+        fun toggleShuffle() {
+            currentSongHelper?.isShuffle = !(currentSongHelper?.isShuffle ?: false)
+            if (currentSongHelper?.isShuffle == true) {
+                Toast.makeText(Statified.myContext, "Shuffle Enabled", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(Statified.myContext, "Shuffle Disabled", Toast.LENGTH_SHORT).show()
+            }
+            currentSongHelper?.isLoop = false
+        }
+
+        fun toggleFavorite() {
+            currentSong?.let { song ->
+                val songIdInt = song.songID.toInt()
+
+                if (favouriteContent?.checkifIDExists(songIdInt) == true) {
+                    favouriteContent?.deleteFavourite(songIdInt)
+                    Toast.makeText(Statified.myContext, "Removed from Favorites", Toast.LENGTH_SHORT).show()
+                } else {
+                    favouriteContent?.storeAsFavourite(
+                        songIdInt,
+                        song.artist,
+                        song.songTitle,
+                        song.songData
+                    )
+                    Toast.makeText(Statified.myContext, "Added to Favorites", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+
+        fun formatDuration(duration: Long): String {
+            return String.format("%02d:%02d",
+                TimeUnit.MILLISECONDS.toMinutes(duration),
+                TimeUnit.MILLISECONDS.toSeconds(duration) -
+                        TimeUnit.MINUTES.toSeconds(TimeUnit.MILLISECONDS.toMinutes(duration)))
+        }
+    } // End of companion object Statified
+
+    override fun onAttach(context: Context) {
+        super.onAttach(context)
+        // Initialize global Statified properties once per app lifecycle
+        if (Statified.currentSongHelper == null) {
+            Statified.currentSongHelper = CurrentSongHelper()
+        }
+        if (Statified.favouriteContent == null) {
+            Statified.favouriteContent = EchoDatabase(context)
+        }
+       // Statified.myContext = context // Set global context
+    }
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -63,7 +249,7 @@ class SongPlayingFragment : Fragment() {
         _binding = FragmentSongPlayingBinding.inflate(inflater, container, false)
         val view = binding.root
 
-        // --- LINK ALL UI ELEMENTS BEFORE THE RETURN STATEMENT ---
+        // Link local UI elements
         visualizerView = binding.visualizerView
         favouriteIcon = binding.favouriteIcon
         songTitle = binding.songTitle
@@ -76,197 +262,132 @@ class SongPlayingFragment : Fragment() {
         nextButton = binding.nextButton
         loopButton = binding.loopButton
         shuffleButton = binding.shuffleButton
-        bigCoverArtImageView = binding.bigCoverArtImageView // LINK THE NEW IMAGEVIEW HERE
+        bigCoverArtImageView = binding.bigCoverArtImageView
 
-        return view // Now the view is returned AFTER linking
+        return view
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        myActivity = context
+        myActivity = requireContext() // Initialize myActivity here
 
-        // --- UPDATED: Receive song data and songList from arguments ---
+        // Receive song data and songList from arguments
         arguments?.let {
-            currentSong = it.getParcelable("songData") // Get the current song
-            currentPosition = it.getInt("songPosition", 0) // Get its position
-
-            // Get the entire song list as an Array<Songs>
-            // Use getParcelableArray and cast, as we sent it as Array<Songs> from HomeFragment
-            songList = it.getParcelableArray("songList") as? Array<Songs>
+            currentSong = it.getParcelable("songData")
+            currentPosition = it.getInt("songPosition", 0)
+            val receivedSongArray = it.getParcelableArray("songList") as? Array<Songs>
+            songList = receivedSongArray?.toCollection(ArrayList())
         }
 
-        // Display initial song details and cover art
-        currentSong?.let { song ->
-            songTitle?.text = song.songTitle
-            songArtist?.text = song.artist
+        // Display initial song details and cover art (call updateUI from here)
+        Statified.currentSong?.let { song ->
+            updateUI(song) // Call local fragment updateUI
+            Statified.playSong(myActivity, song) // CORRECTED: Pass myActivity (Context) here
 
-            // --- LOAD COVER ART USING GLIDE ---
-            val albumArtUri = ContentUris.withAppendedId(
-                Uri.parse("content://media/external/audio/albumart"),
-                song.albumID
-            )
-            Glide.with(this) // Use 'this' as Fragment context
-                .load(albumArtUri)
-                .placeholder(R.drawable.now_playing_bar_eq_image) // Placeholder if no art
-                .error(R.drawable.now_playing_bar_eq_image)      // Image to show on error
-                .into(bigCoverArtImageView!!) // Load into the new big cover art ImageView
-            // --- END LOAD COVER ART ---
+            // Update all local UI based on newly played song
+            updatePlayPauseButtonIcon()
+            updateFavoriteButtonState(song.songID.toInt())
+            updateShuffleLoopButtonIcons()
 
-            // Start playing the song
-            playSong(song)
-
+            // Initial seek bar setup
+            seekBar?.max = Statified.mPlayer?.duration ?: 0
+            endTime?.text = Statified.formatDuration(Statified.mPlayer?.duration?.toLong() ?: 0L)
+            Statified.updateSeekBarHandler.postDelayed(Statified.updateSeekBarRunnable!!, 0) // Start updates
         } ?: run {
             Toast.makeText(myActivity, "Error: No song data received. Navigating back.", Toast.LENGTH_LONG).show()
-            // Optionally, navigate back if no song data
-            // findNavController().popBackStack() // Requires import androidx.navigation.fragment.findNavController
         }
 
         // Set up click listeners for playback controls
         playPauseButton?.setOnClickListener {
-            if (mPlayer?.isPlaying == true) {
-                pauseSong()
+            if (Statified.mPlayer?.isPlaying == true) {
+                Statified.pauseSong()
             } else {
-                resumeSong()
+                Statified.resumeSong()
             }
+            updatePlayPauseButtonIcon() // Update local icon after action
         }
-        // You'll add listeners for previousButton, nextButton, loopButton, shuffleButton here.
-        // You'll also set up the SeekBar.OnSeekBarChangeListener here.
+
+        previousButton?.setOnClickListener { Statified.playPreviousSong() }
+        nextButton?.setOnClickListener { Statified.playNextSong() }
+        shuffleButton?.setOnClickListener { Statified.toggleShuffle() }
+        loopButton?.setOnClickListener { Statified.toggleLoop() }
+        favouriteIcon?.setOnClickListener { Statified.toggleFavorite() }
+
         seekBar?.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                // Update start time as user drags or progress changes
-                if (fromUser) { // Only update if user is dragging
-                    mPlayer?.seekTo(progress)
+                if (fromUser) {
+                    Statified.mPlayer?.seekTo(progress)
                 }
-                startTime?.text = formatDuration(progress.toLong())
+                startTime?.text = Statified.formatDuration(progress.toLong())
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar?) {
-                // Remove callbacks to prevent conflict while user is dragging
-                updateSeekBarHandler.removeCallbacks(updateSeekBarRunnable)
+                Statified.updateSeekBarHandler.removeCallbacks(Statified.updateSeekBarRunnable!!)
             }
 
             override fun onStopTrackingTouch(seekBar: SeekBar?) {
-                // Restart updates after user stops dragging
-                mPlayer?.currentPosition?.let { mPlayer?.seekTo(it) }
-                updateSeekBarHandler.postDelayed(updateSeekBarRunnable, 1000) // Start updating again
+                Statified.updateSeekBarHandler.postDelayed(Statified.updateSeekBarRunnable!!, 1000)
             }
         })
     }
 
-    // --- Media Playback Functions (similar to HomeFragment, but for this full player) ---
+    // --- Helper function to update UI elements (title, artist, cover art) ---
+    private fun updateUI(song: Songs) {
+        songTitle?.text = song.songTitle ?: "Unknown Title"
+        songArtist?.text = song.artist ?: "Unknown Artist"
 
-    private fun playSong(song: Songs) {
-        mPlayer?.release()
-        mPlayer = null
-
-        try {
-            mPlayer = MediaPlayer().apply {
-                myActivity?.let { setDataSource(it, ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, song.songID)) }
-                prepareAsync()
-                setOnPreparedListener { player ->
-                    player.start()
-                    playPauseButton?.setBackgroundResource(R.drawable.pause_icon)
-                    seekBar?.max = player.duration
-                    endTime?.text = formatDuration(player.duration.toLong())
-                    updateSeekBarAndTimer() // Start updating seek bar and times
-
-                    // Integrate audio visualizer
-                    //visualizerView?.setAudioSessionId(player.audioSessionId)
-                }
-                setOnCompletionListener {
-                    // Implement logic for next song here
-                    Toast.makeText(myActivity, "Song finished", Toast.LENGTH_SHORT).show()
-                    // If songList is available, play the next song automatically
-                    playNextSong()
-                }
-                setOnErrorListener { _, what, extra ->
-                    Toast.makeText(myActivity, "Playback error: $what, $extra", Toast.LENGTH_LONG).show()
-                    false
-                }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-            Toast.makeText(myActivity, "Error playing song: ${e.message}", Toast.LENGTH_LONG).show()
-        }
+        val albumArtUri = ContentUris.withAppendedId(
+            Uri.parse("content://media/external/audio/albumart"),
+            song.albumID
+        )
+        Glide.with(this)
+            .load(albumArtUri)
+            .placeholder(R.drawable.now_playing_bar_eq_image)
+            .error(R.drawable.now_playing_bar_eq_image)
+            .into(bigCoverArtImageView!!)
     }
 
-    private fun playNextSong() {
-        if (songList != null && songList!!.isNotEmpty()) {
-            val nextPosition = (currentPosition + 1) % songList!!.size
-            val nextSong = songList!![nextPosition]
-            currentPosition = nextPosition
-            playSong(nextSong)
-
-            // Update UI with new song details
-            songTitle?.text = nextSong.songTitle
-            songArtist?.text = nextSong.artist
-            val albumArtUri = ContentUris.withAppendedId(
-                Uri.parse("content://media/external/audio/albumart"),
-                nextSong.albumID
-            )
-            Glide.with(this)
-                .load(albumArtUri)
-                .placeholder(R.drawable.now_playing_bar_eq_image)
-                .error(R.drawable.now_playing_bar_eq_image)
-                .into(bigCoverArtImageView!!)
+    // --- Helper function to update play/pause button icon (local to fragment) ---
+    private fun updatePlayPauseButtonIcon() {
+        if (Statified.mPlayer?.isPlaying == true) {
+            playPauseButton?.setBackgroundResource(R.drawable.pause_icon)
         } else {
-            Toast.makeText(myActivity, "No more songs in list!", Toast.LENGTH_SHORT).show()
+            playPauseButton?.setBackgroundResource(R.drawable.play_icon)
         }
     }
 
-    private fun playPreviousSong() {
-        if (songList != null && songList!!.isNotEmpty()) {
-            val prevPosition = if (currentPosition - 1 < 0) songList!!.size - 1 else currentPosition - 1
-            val prevSong = songList!![prevPosition]
-            currentPosition = prevPosition
-            playSong(prevSong)
-
-            // Update UI with new song details
-            songTitle?.text = prevSong.songTitle
-            songArtist?.text = prevSong.artist
-            val albumArtUri = ContentUris.withAppendedId(
-                Uri.parse("content://media/external/audio/albumart"),
-                prevSong.albumID
-            )
-            Glide.with(this)
-                .load(albumArtUri)
-                .placeholder(R.drawable.now_playing_bar_eq_image)
-                .error(R.drawable.now_playing_bar_eq_image)
-                .into(bigCoverArtImageView!!)
+    // --- Helper function to update favorite button icon (local to fragment) ---
+    private fun updateFavoriteButtonState(songId: Int) {
+        if (Statified.favouriteContent?.checkifIDExists(songId) == true) {
+            favouriteIcon?.setImageDrawable(ContextCompat.getDrawable(requireContext(), R.drawable.favorite_on))
         } else {
-            Toast.makeText(myActivity, "No more songs in list!", Toast.LENGTH_SHORT).show()
+            favouriteIcon?.setImageDrawable(ContextCompat.getDrawable(requireContext(), R.drawable.favorite_off))
         }
     }
 
-    private fun pauseSong() {
-        mPlayer?.pause()
-        playPauseButton?.setBackgroundResource(R.drawable.play_icon)
-        updateSeekBarHandler.removeCallbacks(updateSeekBarRunnable) // Stop updating
-    }
+    // --- Helper function to update shuffle/loop icons (local to fragment) ---
+    private fun updateShuffleLoopButtonIcons() {
+        if (Statified.currentSongHelper?.isShuffle == true) {
+            shuffleButton?.setBackgroundResource(R.drawable.shuffle_icon_pressed)
+        } else {
+            shuffleButton?.setBackgroundResource(R.drawable.shuffle_white_icon)
+        }
 
-    private fun resumeSong() {
-        mPlayer?.start()
-        playPauseButton?.setBackgroundResource(R.drawable.pause_icon)
-        updateSeekBarAndTimer() // Resume updating
-    }
-
-    // Runnable to update seek bar and timers
-    private val updateSeekBarRunnable = object : Runnable {
-        override fun run() {
-            if (mPlayer?.isPlaying == true) {
-                val currentPosition = mPlayer?.currentPosition ?: 0
-                seekBar?.progress = currentPosition
-                startTime?.text = formatDuration(currentPosition.toLong())
-                updateSeekBarHandler.postDelayed(this, 1000) // Update every second
-            }
+        if (Statified.currentSongHelper?.isLoop == true) {
+            loopButton?.setBackgroundResource(R.drawable.loop_icon_pressed)
+        } else {
+            loopButton?.setBackgroundResource(R.drawable.loop_white_icon)
         }
     }
 
+
+    // Helper function to start continuous seek bar updates (local to fragment)
     private fun updateSeekBarAndTimer() {
-        updateSeekBarHandler.postDelayed(updateSeekBarRunnable, 0)
+        Statified.updateSeekBarHandler.postDelayed(Statified.updateSeekBarRunnable!!, 0)
     }
 
+    // Helper function to format duration (local to fragment)
     private fun formatDuration(duration: Long): String {
         return String.format("%02d:%02d",
             TimeUnit.MILLISECONDS.toMinutes(duration),
@@ -274,41 +395,45 @@ class SongPlayingFragment : Fragment() {
                     TimeUnit.MINUTES.toSeconds(TimeUnit.MILLISECONDS.toMinutes(duration)))
     }
 
+    // --- Fragment Lifecycle ---
     override fun onStop() {
         super.onStop()
-        // Release MediaPlayer when fragment is stopped
-        mPlayer?.release()
-        mPlayer = null
-        updateSeekBarHandler.removeCallbacks(updateSeekBarRunnable) // Stop handler
+        // No release here, as mPlayer is global now
     }
 
     override fun onDestroyView() {
         super.onDestroyView()
-        // Release ViewBinding
         _binding = null
-        // Ensure MediaPlayer and handler are stopped
-        mPlayer?.release()
-        mPlayer = null
-        updateSeekBarHandler.removeCallbacks(updateSeekBarRunnable)
+        // Stop handler callbacks if fragment view is destroyed
+        Statified.updateSeekBarHandler.removeCallbacks(Statified.updateSeekBarRunnable!!)
     }
 
     override fun onResume() {
         super.onResume()
-     //   visualizerView?.onResume() // Ensure visualizer resumes
-        if (mPlayer != null && mPlayer?.isPlaying == true) {
-            updateSeekBarAndTimer() // Resume seek bar updates if playing
+        // visualizerView?.onResume()
+        // Update local UI to reflect current global playback state
+        Statified.currentSong?.let { song ->
+            updateUI(song)
+            updatePlayPauseButtonIcon()
+            updateFavoriteButtonState(song.songID.toInt())
+            updateShuffleLoopButtonIcons()
+        }
+        // Start seek bar updates if global player is active and playing
+        if (Statified.mPlayer != null && Statified.mPlayer?.isPlaying == true) {
+            updateSeekBarAndTimer()
         }
     }
 
     override fun onPause() {
         super.onPause()
-      //  visualizerView?.onPause() // Ensure visualizer pauses
-        updateSeekBarHandler.removeCallbacks(updateSeekBarRunnable) // Stop updates when paused
+        // visualizerView?.onPause()
+        Statified.updateSeekBarHandler.removeCallbacks(Statified.updateSeekBarRunnable!!)
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        // Destroy visualizer
-      //  visualizerView?.release()
+        // visualizerView?.release()
+        // Only release global player when application is completely shut down (e.g., in a Service)
+        // For now, it will remain active until app process dies or explicitly killed.
     }
 }

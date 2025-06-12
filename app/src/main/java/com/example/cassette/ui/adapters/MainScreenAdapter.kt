@@ -1,4 +1,4 @@
-package com.internshala.echo.adapters
+package com.example.cassette.data.adapters
 
 import android.content.Context
 import android.view.LayoutInflater
@@ -18,9 +18,6 @@ class MainScreenAdapter(
     private val itemClickListener: (song: Songs, position: Int) -> Unit // THIS IS THE NEW PARAMETER
 ) : RecyclerView.Adapter<MainScreenAdapter.MyViewHolder>() {
 
-    // Removed the 'init' block as properties are directly assigned in the constructor now
-    // var songDetails: ArrayList<Songs>? = null // No longer needed as it's a private val
-    // var mContext: Context? = null            // No longer needed as it's a private val
 
     override fun onBindViewHolder(holder: MyViewHolder, position: Int) { // Renamed p0, p1 for clarity
         val songObject = songDetails[position] // Access directly, no need for ?.get(p1)
@@ -31,8 +28,6 @@ class MainScreenAdapter(
         holder.contentHolder?.setOnClickListener {
             itemClickListener.invoke(songObject, position) // Invoke the lambda with song data and position
         }
-
-        // Removed the large commented-out block as it's replaced by the lambda
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): MyViewHolder { // Renamed p0, p1 for clarity

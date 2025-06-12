@@ -1,4 +1,3 @@
-// Playlist.kt (Create this file in app/src/main/java/com/internshala/echo/Playlist.kt)
 package com.example.cassette.data
 
 import android.os.Parcel

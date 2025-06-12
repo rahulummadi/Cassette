@@ -2,7 +2,7 @@
 <RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    android:id="@+id/content_main"
+    android:id="@+id/contentmainrl"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:clickable="true">
@@ -174,7 +174,18 @@
                 app:layout_constraintTop_toTopOf="@id/now_playing_shuffle_button"
                 app:layout_constraintBottom_toBottomOf="@id/now_playing_shuffle_button" />
 
-        </androidx.constraintlayout.widget.ConstraintLayout>
+            <ImageButton
+                android:id="@+id/now_playing_loop_button"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Loop"
+                android:src="@drawable/loop_white_icon"
+                app:layout_constraintEnd_toStartOf="@+id/now_playing_shuffle_button"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toTopOf="@id/now_playing_shuffle_button"
+                app:layout_constraintBottom_toBottomOf="@id/now_playing_shuffle_button"
+                app:layout_constraintHorizontal_bias="0.5"/> </androidx.constraintlayout.widget.ConstraintLayout>
     </RelativeLayout>
 
     <RelativeLayout
