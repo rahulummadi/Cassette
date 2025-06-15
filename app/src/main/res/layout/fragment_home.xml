@@ -5,7 +5,8 @@
     android:id="@+id/contentmainrl"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:clickable="true">
+    android:clickable="true"
+    android:background="@android:color/white">
 
     <RelativeLayout
         android:id="@+id/visibleLayout"
@@ -26,8 +27,7 @@
             android:layout_height="150dp"
             android:layout_alignParentBottom="true"
             android:background="@color/salmon"
-            android:visibility="visible"
-            android:clickable="true" >
+            android:visibility="gone" android:clickable="true" >
 
             <SeekBar
                 android:id="@+id/now_playing_seek_bar"
@@ -185,23 +185,21 @@
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintTop_toTopOf="@id/now_playing_shuffle_button"
                 app:layout_constraintBottom_toBottomOf="@id/now_playing_shuffle_button"
-                app:layout_constraintHorizontal_bias="0.5"/> </androidx.constraintlayout.widget.ConstraintLayout>
-    </RelativeLayout>
+                app:layout_constraintHorizontal_bias="0.5"/>
+        </androidx.constraintlayout.widget.ConstraintLayout> </RelativeLayout> <RelativeLayout
+    android:id="@+id/noSongs"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#ffffff"
+    android:visibility="invisible">
 
-    <RelativeLayout
-        android:id="@+id/noSongs"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:background="#ffffff"
-        android:visibility="invisible">
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_centerInParent="true"
+        android:text="You do not have any songs at the moment"
+        android:textColor="#000000" />
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_centerInParent="true"
-            android:text="You do not have any songs at the moment"
-            android:textColor="#000000" />
-
-    </RelativeLayout>
+</RelativeLayout>
 
 </RelativeLayout>

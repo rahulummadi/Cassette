@@ -3,7 +3,7 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/mobile_navigation"
-    app:startDestination="@+id/navigation_home">
+    app:startDestination="@id/navigation_home">
 
     <fragment
         android:id="@+id/navigation_home"
@@ -12,40 +12,36 @@
         tools:layout="@layout/fragment_home" />
 
     <fragment
-        android:id="@+id/navigation_playlist"
-        android:name="com.example.cassette.ui.dashboard.PlayListFragment"
-        android:label="@string/playlist"
-        tools:layout="@layout/fragment_play_list" />
+        android:id="@+id/navigation_search"
+        android:name="com.example.cassette.ui.search.SearchFragment"
+        android:label="@string/title_search"
+        tools:layout="@layout/fragment_search" />
 
     <fragment
-        android:id="@+id/navigation_search"
-        android:name="com.example.cassette.ui.dashboard.SearchFragment"
-        android:label="@string/search"
-        tools:layout="@layout/fragment_search" />
+        android:id="@+id/navigation_playlists"
+        android:name="com.example.cassette.ui.dashboard.PlayListFragment"
+        android:label="@string/title_playlists"
+        tools:layout="@layout/fragment_playlist_songs" />
 
     <fragment
         android:id="@+id/navigation_settings"
         android:name="com.example.cassette.ui.dashboard.SettingsFragment"
-        android:label="@string/settings"
+        android:label="@string/title_settings"
         tools:layout="@layout/fragment_settings" />
 
     <fragment
         android:id="@+id/navigation_song_playing"
         android:name="com.example.cassette.ui.SongPlayingFragment"
-        android:label="Now Playing"
-        tools:layout="@layout/fragment_song_playing">
-
+        android:label="{songTitle}" tools:layout="@layout/fragment_song_playing">
         <argument
             android:name="songData"
-            app:argType="com.example.cassette.data.Songs"  app:nullable="false" />
+            app:argType="com.example.cassette.data.Songs" />
         <argument
             android:name="songPosition"
-            app:argType="integer"
-            android:defaultValue="0" />
+            app:argType="integer" />
         <argument
             android:name="songList"
-            app:argType="com.example.cassette.data.Songs[]" app:nullable="true" />
-
+            app:argType="com.example.cassette.data.Songs[]" />
     </fragment>
 
 </navigation>

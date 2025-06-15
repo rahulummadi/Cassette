@@ -14,6 +14,7 @@ navigationFragmentKtx = "2.6.0"
 navigationUiKtx = "2.6.0"
 activity = "1.8.0"
 preference = "1.2.0"
+preferenceVersion = "1.2.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -31,6 +32,7 @@ androidx-activity = { group = "androidx.activity", name = "activity", version.re
 androidx-core-splashscreen = { group = "androidx.core", name = "core-splashscreen", version = "1.0.1" }
 androidx-preference = { group = "androidx.preference", name = "preference", version.ref = "preference" }
 cleveroad-audiovisualization = { group = "com.cleveroad", name = "audiovisualization", version = "1.0.0" }
+preference = { group = "androidx.preference", name = "preference", version.ref = "preferenceVersion" }
 
 
 [plugins]

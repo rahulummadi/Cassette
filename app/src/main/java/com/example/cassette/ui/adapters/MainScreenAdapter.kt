@@ -42,6 +42,13 @@ class MainScreenAdapter(
         return songDetails.size
     }
 
+    // ADD THIS NEW METHOD HERE
+    fun updateData(newSongs: ArrayList<Songs>) {
+        this.songDetails.clear() // Clear existing data
+        this.songDetails.addAll(newSongs) // Add new data
+        notifyDataSetChanged() // Notify the RecyclerView that the data has changed
+    }
+
     class MyViewHolder(view: View) : RecyclerView.ViewHolder(view) {
         var trackTitle: TextView? = null
         var trackArtist: TextView? = null

@@ -12,6 +12,7 @@
     <color name="second">#4e1741</color>
     <color name="third">#74204d</color>
     <color name="fourth">#9d2a58</color>
+    <color name="grey_light">#D3D3D3</color>
 
 
     <array name="rainbow">

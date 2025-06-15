@@ -2,414 +2,289 @@ package com.example.cassette.ui.home
 
 import android.Manifest
 import android.app.Activity
-import android.content.ContentUris
+import android.content.ComponentName
 import android.content.Context
 import android.content.pm.PackageManager
-import android.media.MediaPlayer
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.MediaStore
-import android.view.LayoutInflater
-import android.view.Menu
-import android.view.MenuInflater
-import android.view.MenuItem
-import android.view.View
-import android.view.ViewGroup
-import android.widget.ImageButton
-import android.widget.ImageView
-import android.widget.RelativeLayout
-import android.widget.SeekBar
-import android.widget.TextView
+import android.support.v4.media.MediaBrowserCompat
+import android.support.v4.media.MediaMetadataCompat
+import android.support.v4.media.session.MediaControllerCompat
+import android.support.v4.media.session.PlaybackStateCompat
+import android.view.*
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.DefaultItemAnimator
 import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
+import com.bumptech.glide.Glide
 import com.example.cassette.R
-import com.example.cassette.databinding.FragmentHomeBinding
 import com.example.cassette.data.Songs
 import com.example.cassette.data.adapters.MainScreenAdapter
-import com.bumptech.glide.Glide // Single import for Glide
-import com.example.cassette.ui.SongPlayingFragment // Single import for SongPlayingFragment
-import com.example.cassette.ui.dialogs.AddSongToPlaylistDialog // Single import for AddSongToPlaylistDialog
-import java.util.ArrayList
-import java.util.Collections
-import java.util.concurrent.TimeUnit
+import com.example.cassette.databinding.FragmentHomeBinding
+import com.example.cassette.services.MediaPlaybackService
+import java.util.*
+import kotlin.collections.ArrayList
 
 class HomeFragment : Fragment() {
 
-    // UI elements linked via binding.
-    var nowPlayingButtonBar: ConstraintLayout? = null
-    var playPauseButton: ImageButton? = null
-    var songTitle: TextView? = null
-    var noSongs: RelativeLayout? = null
-    var visibleLayout: RelativeLayout? = null
-    var recyclerView: RecyclerView? = null
-
-    // Variables for the NEW DETAILED PLAYER BAR ELEMENTS
-    var nowPlayingSeekBar: SeekBar? = null
-    var nowPlayingStartTime: TextView? = null
-    var nowPlayingEndTime: TextView? = null
-    var nowPlayingCoverArt: ImageView? = null
-    var nowPlayingArtistBar: TextView? = null
-    var nowPlayingShuffleButton: ImageButton? = null
-    var nowPlayingPreviousButton: ImageButton? = null
-    var nowPlayingNextButton: ImageButton? = null
-    var nowPlayingFavoriteButton: ImageButton? = null
-    var nowPlayingLoopButton: ImageButton? = null
-
-    // Activity context
-    lateinit var myActivity: Activity
-
-    // Adapter and song list
-    var _mainScreenAdapter: MainScreenAdapter? = null
-    var getSongsList: ArrayList<Songs>? = null
-
-    // View Binding property
     private var _binding: FragmentHomeBinding? = null
     private val binding get() = _binding!!
 
-    // Add a flag to indicate if a song is currently being played, so the bar only shows if relevant.
-    private var isPlayingAnything: Boolean = false
+    private lateinit var myActivity: Activity
+    private var mainScreenAdapter: MainScreenAdapter? = null
+    private var getSongsList: ArrayList<Songs> = ArrayList()
 
-    // ActivityResultLauncher for permissions
+    // NEW: MediaBrowser and MediaController for service communication
+    private lateinit var mediaBrowser: MediaBrowserCompat
+    private var mediaController: MediaControllerCompat? = null
+
+    // NEW: Handler for updating seek bar
+    private val seekBarUpdateHandler = Handler(Looper.getMainLooper())
+    private lateinit var seekBarUpdateRunnable: Runnable
+
     private val requestPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-
-        val audioPermissionGranted = permissions[Manifest.permission.READ_MEDIA_AUDIO] == true ||
-                permissions[Manifest.permission.READ_EXTERNAL_STORAGE] == true
-
-        val recordAudioGranted = permissions[Manifest.permission.RECORD_AUDIO] == true
-
-        if (audioPermissionGranted) {
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        if (isGranted) {
             loadSongsIntoUI()
         } else {
-            Toast.makeText(
-                myActivity,
-                "Permission to read audio files denied. Cannot load songs.",
-                Toast.LENGTH_LONG
-            ).show()
-            visibleLayout?.visibility = View.INVISIBLE
-            noSongs?.visibility = View.VISIBLE
+            Toast.makeText(myActivity, "Permission denied. Cannot load songs.", Toast.LENGTH_LONG).show()
+            binding.visibleLayout.visibility = View.INVISIBLE
+            binding.noSongs.visibility = View.VISIBLE
         }
     }
 
-
-
-    override fun onCreateView(
-        inflater: LayoutInflater,
-        container: ViewGroup?,
-        savedInstanceState: Bundle?
-    ): View {
-        _binding = FragmentHomeBinding.inflate(inflater, container, false)
-        val root: View = binding.root
-        // Link all UI elements using binding
-        visibleLayout = binding.visibleLayout
-        noSongs = binding.noSongs
-        nowPlayingButtonBar = binding.hiddenBarMainScreen
-
-        // Corrected assignments for song title and play/pause button to match new XML IDs
-        songTitle = binding.nowPlayingSongTitleBar
-        playPauseButton = binding.nowPlayingPlayPauseButton
-
-        // Link the NEW UI ELEMENTS from the detailed player bar layout
-        nowPlayingSeekBar = binding.nowPlayingSeekBar
-        nowPlayingStartTime = binding.nowPlayingStartTime
-        nowPlayingEndTime = binding.nowPlayingEndTime
-        nowPlayingCoverArt = binding.nowPlayingCoverArt
-        nowPlayingArtistBar = binding.nowPlayingSongArtistBar
-        nowPlayingShuffleButton = binding.nowPlayingShuffleButton
-        nowPlayingPreviousButton = binding.nowPlayingPreviousButton
-        nowPlayingNextButton = binding.nowPlayingNextButton
-        nowPlayingFavoriteButton = binding.nowPlayingFavoriteButton
-
-        recyclerView = binding.contentMain // Correctly using contentMain
-
-        return root
-    }
-
-    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        super.onViewCreated(view, savedInstanceState)
-
-        // Request permissions when the view is created
-        checkAndRequestPermissions()
-
-        // Set up click listener for play/pause button on mini-player
-        playPauseButton?.setOnClickListener {
-            // Check if a player instance exists before trying to control it
-            if (SongPlayingFragment.Statified.mPlayer != null) {
-                if (SongPlayingFragment.Statified.mPlayer?.isPlaying == true) {
-                    SongPlayingFragment.Statified.pauseSong()
-                } else {
-                    SongPlayingFragment.Statified.resumeSong()
-                }
-                updatePlayPauseButtonIcon() // Update mini-player's icon based on global state
-            } else {
-                Toast.makeText(myActivity, "No song selected to play.", Toast.LENGTH_SHORT).show()
-            }
-        }
-
-        // Click listener for the Now Playing bar to open full player
-        nowPlayingButtonBar?.setOnClickListener {
-            // Check global current song
-            if (SongPlayingFragment.Statified.currentSong != null) {
-                val bundle = Bundle().apply {
-                    putParcelable("songData", SongPlayingFragment.Statified.currentSong)
-                    putInt("songPosition", SongPlayingFragment.Statified.currentPosition)
-                    SongPlayingFragment.Statified.songList?.let { list ->
-                        putParcelableArray("songList", list.toTypedArray())
-                    }
-                }
-                findNavController().navigate(R.id.navigation_song_playing, bundle)
-            } else {
-                Toast.makeText(myActivity, "No song currently playing.", Toast.LENGTH_SHORT).show()
-            }
-        }
-
-        // Add click listeners for Next, Previous, Shuffle buttons in mini-player
-        nowPlayingNextButton?.setOnClickListener {
-            if (SongPlayingFragment.Statified.songList != null && SongPlayingFragment.Statified.songList!!.isNotEmpty()) {
-                SongPlayingFragment.Statified.playNextSong()
-                updateMiniPlayerUI() // Update mini-player after playing next
-            } else {
-                Toast.makeText(myActivity, "No songs in list.", Toast.LENGTH_SHORT).show()
-            }
-        }
-
-        nowPlayingPreviousButton?.setOnClickListener {
-            if (SongPlayingFragment.Statified.songList != null && SongPlayingFragment.Statified.songList!!.isNotEmpty()) {
-                SongPlayingFragment.Statified.playPreviousSong()
-                updateMiniPlayerUI() // Update mini-player after playing previous
-            } else {
-                Toast.makeText(myActivity, "No songs in list.", Toast.LENGTH_SHORT).show()
-            }
-        }
-
-        nowPlayingShuffleButton?.setOnClickListener {
-            SongPlayingFragment.Statified.toggleShuffle()
-            updateMiniPlayerUI() // Update mini-player for shuffle icon
-        }
-
-        nowPlayingFavoriteButton?.setOnClickListener {
-            // Launch the AddSongToPlaylistDialog (already implemented this)
-            SongPlayingFragment.Statified.currentSong?.let { song ->
-                val dialog = AddSongToPlaylistDialog.newInstance(song)
-                dialog.show(childFragmentManager, "AddSongToPlaylistDialog")
-            } ?: run {
-                Toast.makeText(myActivity, "No song currently playing to add.", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-
-    private fun checkAndRequestPermissions() {
-        val permissionsToRequest = mutableListOf<String>()
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(
-                    myActivity,
-                    Manifest.permission.READ_MEDIA_AUDIO
-                ) != PackageManager.PERMISSION_GRANTED
-            ) {
-                permissionsToRequest.add(Manifest.permission.READ_MEDIA_AUDIO)
-            }
-        } else {
-            if (ContextCompat.checkSelfPermission(
-                    myActivity,
-                    Manifest.permission.READ_EXTERNAL_STORAGE
-                ) != PackageManager.PERMISSION_GRANTED
-            ) {
-                permissionsToRequest.add(Manifest.permission.READ_EXTERNAL_STORAGE)
-            }
-        }
-
-        if (ContextCompat.checkSelfPermission(
-                myActivity,
-                Manifest.permission.RECORD_AUDIO
-            ) != PackageManager.PERMISSION_GRANTED
-        ) {
-            permissionsToRequest.add(Manifest.permission.RECORD_AUDIO)
-        }
-
-        if (permissionsToRequest.isNotEmpty()) {
-            requestPermissionLauncher.launch(permissionsToRequest.toTypedArray())
-        } else {
-            loadSongsIntoUI()
-        }
-    }
-
-
-
-    private fun loadSongsIntoUI() {
-        getSongsList = getSongsFromPhone()
-        val prefs = activity?.getSharedPreferences("action_sort", Context.MODE_PRIVATE)
-        val action_sort_ascending = prefs?.getString("action_sort_ascending", "true")
-        val action_sort_recent = prefs?.getString("action_sort_recent", "false")
-
-        if (getSongsList == null || getSongsList!!.isEmpty()) {
-            visibleLayout?.visibility = View.INVISIBLE
-            noSongs?.visibility = View.VISIBLE
-        } else {
-            visibleLayout?.visibility = View.VISIBLE
-            noSongs?.visibility = View.INVISIBLE
-
-            // Initialize adapter with a click listener
-            _mainScreenAdapter = MainScreenAdapter(
-                getSongsList as ArrayList<Songs>,
-                myActivity as Context
-            ) { song, position ->
-                // When a song is clicked in the list, set global song data and start playing it
-                SongPlayingFragment.Statified.songList = getSongsList // Set global song list
-                SongPlayingFragment.Statified.currentPosition = position // Set global position
-                SongPlayingFragment.Statified.currentSong = song // Set global current song
-                SongPlayingFragment.Statified.myContext = myActivity // Ensure myContext is set on Statified from here
-                SongPlayingFragment.Statified.playSong(myActivity, song) // Play song via global player
-
-                // Update mini-player UI immediately after starting playback
-                updateMiniPlayerUI()
-            }
-            val mLayoutManager = LinearLayoutManager(myActivity)
-            recyclerView?.layoutManager = mLayoutManager
-            recyclerView?.itemAnimator = DefaultItemAnimator()
-            recyclerView?.adapter = _mainScreenAdapter
-
-            // Apply sorting if preferences exist
-            if (action_sort_ascending!!.equals("true", true)) {
-                Collections.sort(
-                    getSongsList,
-                    Songs.CREATOR.Statified.nameComparator
-                )
-            } else if (action_sort_recent!!.equals("true", true)) {
-                Collections.sort(
-                    getSongsList,
-                    Songs.CREATOR.Statified.dateComparator
-                )
-            }
-        }
-    }
-
-    // --- Helper function to update mini-player UI state (reads from global Statified) ---
-    private fun updateMiniPlayerUI() {
-        val currentSong = SongPlayingFragment.Statified.currentSong
-        val mPlayer = SongPlayingFragment.Statified.mPlayer
-        val currentSongHelper = SongPlayingFragment.Statified.currentSongHelper
-
-        if (currentSong != null && mPlayer != null) {
-            nowPlayingButtonBar?.visibility = View.VISIBLE
-            songTitle?.text = currentSong.songTitle
-            nowPlayingArtistBar?.text = currentSong.artist
-
-            // Update play/pause icon
-            updatePlayPauseButtonIcon()
-
-            // Load mini-player cover art
-            val albumArtUri = ContentUris.withAppendedId(
-                Uri.parse("content://media/external/audio/albumart"),
-                currentSong.albumID
-            )
-            Glide.with(this@HomeFragment)
-                .load(albumArtUri)
-                .placeholder(R.drawable.now_playing_bar_eq_image)
-                .error(R.drawable.now_playing_bar_eq_image)
-                .into(nowPlayingCoverArt!!)
-
-            // Update shuffle/loop icons
-            updateShuffleLoopButtonIcons()
-
-            // Update seek bar and times (no continuous seek bar movement on mini-player here, just initial text)
-            nowPlayingStartTime?.text = SongPlayingFragment.Statified.formatDuration(mPlayer.currentPosition.toLong())
-            nowPlayingEndTime?.text = SongPlayingFragment.Statified.formatDuration(mPlayer.duration.toLong())
-
-        } else {
-            nowPlayingButtonBar?.visibility = View.INVISIBLE
-        }
-    }
-
-    // --- Helper function to update mini-player's play/pause icon ---
-    private fun updatePlayPauseButtonIcon() {
-        if (SongPlayingFragment.Statified.mPlayer?.isPlaying == true) {
-            playPauseButton?.setBackgroundResource(R.drawable.pause_icon)
-        } else {
-            playPauseButton?.setBackgroundResource(R.drawable.play_icon)
-        }
-    }
-
-    // --- Helper function to update mini-player's shuffle/loop icons ---
-    private fun updateShuffleLoopButtonIcons() {
-        if (SongPlayingFragment.Statified.currentSongHelper?.isShuffle == true) {
-            nowPlayingShuffleButton?.setBackgroundResource(R.drawable.shuffle_icon_pressed)
-        } else {
-            nowPlayingShuffleButton?.setBackgroundResource(R.drawable.shuffle_white_icon)
-        }
-
-        if (SongPlayingFragment.Statified.currentSongHelper?.isLoop == true) {
-            nowPlayingLoopButton?.setBackgroundResource(R.drawable.loop_icon_pressed)
-        } else {
-            nowPlayingLoopButton?.setBackgroundResource(R.drawable.loop_white_icon)
-        }
-    }
-
-
-    // Helper function to format duration (can be accessed via SongPlayingFragment.Statified.formatDuration)
-    private fun formatDuration(duration: Long): String {
-        return String.format(
-            "%02d:%02d",
-            TimeUnit.MILLISECONDS.toMinutes(duration),
-            TimeUnit.MILLISECONDS.toSeconds(duration) -
-                    TimeUnit.MINUTES.toSeconds(TimeUnit.MILLISECONDS.toMinutes(duration))
-        )
-    }
-
-    // --- Fragment Lifecycle ---
-    override fun onStop() {
-        super.onStop()
-        // No local MediaPlayer to release here anymore
-    }
-
-    override fun onDestroyView() {
-        super.onDestroyView()
-        _binding = null
-        // No local MediaPlayer to release here anymore
-    }
-
-    override fun onResume() {
-        super.onResume()
-        // Update mini-player UI to reflect current global playback state
-        updateMiniPlayerUI()
-        // Start mini-player's seek bar updates if global player is active and playing
-        if (SongPlayingFragment.Statified.mPlayer != null && SongPlayingFragment.Statified.mPlayer?.isPlaying == true) {
-            // Note: This Handler/Runnable is local to SongPlayingFragment, so we need to access its Statified version
-            SongPlayingFragment.Statified.updateSeekBarHandler.postDelayed(SongPlayingFragment.Statified.updateSeekBarRunnable!!, 0)
-        }
-    }
-
-    override fun onPause() {
-        super.onPause()
-        // Stop mini-player's seek bar updates
-       // SongPlayingFragment.Statified.updateSeekBarHandler.removeCallbacks(SongPlayingFragment.Statified.updateSeekBarRunnable!!)
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        // No local MediaPlayer to release here anymore
-    }
-
-    // --- Existing Methods (from your original code) ---
     override fun onAttach(context: Context) {
         super.onAttach(context)
         myActivity = context as Activity
     }
 
-    override fun onAttach(activity: Activity) {
-        super.onAttach(activity)
-        if (!this::myActivity.isInitialized) {
-            myActivity = activity
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setHasOptionsMenu(true) // Enable options menu in fragment
+
+        // NEW: Initialize the MediaBrowser
+        mediaBrowser = MediaBrowserCompat(
+            requireContext(),
+            ComponentName(requireContext(), MediaPlaybackService::class.java),
+            connectionCallbacks,
+            null
+        )
+    }
+
+    override fun onCreateView(
+        inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
+    ): View {
+        _binding = FragmentHomeBinding.inflate(inflater, container, false)
+        return binding.root
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        checkAndRequestPermissions()
+        setupClickListeners()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (!mediaBrowser.isConnected) {
+            mediaBrowser.connect()
         }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        mediaController?.unregisterCallback(controllerCallback)
+        mediaBrowser.disconnect()
+        seekBarUpdateHandler.removeCallbacks(seekBarUpdateRunnable)
+    }
+
+    // NEW: Callbacks for connecting to the MediaPlaybackService
+    private val connectionCallbacks = object : MediaBrowserCompat.ConnectionCallback() {
+        override fun onConnected() {
+            mediaController = MediaControllerCompat(requireContext(), mediaBrowser.sessionToken)
+            mediaController?.registerCallback(controllerCallback)
+
+            // Sync UI with current state of the service
+            val metadata = mediaController?.metadata
+            val playbackState = mediaController?.playbackState
+            updateUiWithMetadata(metadata)
+            updateUiWithPlaybackState(playbackState)
+        }
+
+        override fun onConnectionSuspended() { mediaController = null }
+        override fun onConnectionFailed() { mediaController = null }
+    }
+
+    // NEW: Callback to receive updates from the MediaPlaybackService
+    private var controllerCallback = object : MediaControllerCompat.Callback() {
+        override fun onMetadataChanged(metadata: MediaMetadataCompat?) {
+            updateUiWithMetadata(metadata)
+        }
+
+        override fun onPlaybackStateChanged(state: PlaybackStateCompat?) {
+            updateUiWithPlaybackState(state)
+        }
+    }
+
+    private fun checkAndRequestPermissions() {
+        when {
+            ContextCompat.checkSelfPermission(
+                myActivity, Manifest.permission.READ_MEDIA_AUDIO
+            ) == PackageManager.PERMISSION_GRANTED -> {
+                loadSongsIntoUI()
+            }
+            else -> {
+                requestPermissionLauncher.launch(Manifest.permission.READ_MEDIA_AUDIO)
+            }
+        }
+    }
+
+    private fun loadSongsIntoUI() {
+        getSongsList = getSongsFromPhone()
+        if (getSongsList.isEmpty()) {
+            binding.visibleLayout.visibility = View.INVISIBLE
+            binding.noSongs.visibility = View.VISIBLE
+        } else {
+            binding.visibleLayout.visibility = View.VISIBLE
+            binding.noSongs.visibility = View.INVISIBLE
+
+            mainScreenAdapter = MainScreenAdapter(getSongsList, myActivity) { song, position ->
+                if (mediaBrowser.isConnected) {
+                    val extras = Bundle().apply {
+                        putParcelableArrayList("song_list", getSongsList)
+                        putInt("start_index", position)
+                    }
+                    mediaController?.transportControls?.sendCustomAction(
+                        "com.example.cassette.services.ACTION_PLAY_FROM_LIST", extras
+                    )
+                }
+            }
+            binding.contentMain.layoutManager = LinearLayoutManager(myActivity)
+            binding.contentMain.itemAnimator = DefaultItemAnimator()
+            binding.contentMain.adapter = mainScreenAdapter
+            applySorting()
+        }
+    }
+
+    // REFACTORED: All click listeners now use the mediaController
+    private fun setupClickListeners() {
+        binding.hiddenBarMainScreen.setOnClickListener {
+            // Navigate to the full player fragment
+            findNavController().navigate(R.id.navigation_song_playing)
+        }
+
+        binding.nowPlayingPlayPauseButton.setOnClickListener {
+            val state = mediaController?.playbackState?.state
+            if (state == PlaybackStateCompat.STATE_PLAYING) {
+                mediaController?.transportControls?.pause()
+            } else {
+                mediaController?.transportControls?.play()
+            }
+        }
+        binding.nowPlayingNextButton.setOnClickListener { mediaController?.transportControls?.skipToNext() }
+        binding.nowPlayingPreviousButton.setOnClickListener { mediaController?.transportControls?.skipToPrevious() }
+    }
+
+    // NEW: Function to update the mini-player based on service metadata
+    private fun updateUiWithMetadata(metadata: MediaMetadataCompat?) {
+        if (metadata == null) {
+            binding.hiddenBarMainScreen.visibility = View.GONE
+            return
+        }
+        binding.hiddenBarMainScreen.visibility = View.VISIBLE
+        binding.nowPlayingSongTitleBar.text = metadata.getString(MediaMetadataCompat.METADATA_KEY_TITLE)
+        binding.nowPlayingSongArtistBar.text = metadata.getString(MediaMetadataCompat.METADATA_KEY_ARTIST)
+        binding.nowPlayingEndTime.text =
+            android.text.format.DateUtils.formatElapsedTime(metadata.getLong(MediaMetadataCompat.METADATA_KEY_DURATION) / 1000)
+
+        // NEW: Get the album art URI from the metadata and load it with Glide
+        val albumArtUriString = metadata.getString(MediaMetadataCompat.METADATA_KEY_ALBUM_ART_URI)
+        albumArtUriString?.let {
+            Glide.with(this@HomeFragment)
+                .load(Uri.parse(it))
+                .placeholder(R.drawable.now_playing_bar_eq_image) // Make sure this drawable exists
+                .error(R.drawable.now_playing_bar_eq_image) // Make sure this drawable exists
+                .into(binding.nowPlayingCoverArt)
+        }
+    }
+
+    // NEW: Function to update the mini-player based on service playback state
+    private fun updateUiWithPlaybackState(state: PlaybackStateCompat?) {
+        if (state == null) {
+            binding.hiddenBarMainScreen.visibility = View.GONE
+            return
+        }
+
+        when (state.state) {
+            PlaybackStateCompat.STATE_PLAYING -> {
+                binding.nowPlayingPlayPauseButton.setImageResource(R.drawable.pause_icon)
+                startSeekBarUpdate()
+            }
+            PlaybackStateCompat.STATE_PAUSED, PlaybackStateCompat.STATE_STOPPED, PlaybackStateCompat.STATE_NONE -> {
+                binding.nowPlayingPlayPauseButton.setImageResource(R.drawable.play_icon)
+                stopSeekBarUpdate()
+            }
+        }
+        binding.nowPlayingSeekBar.progress = state.position.toInt()
+    }
+
+    private fun startSeekBarUpdate() {
+        seekBarUpdateRunnable = Runnable {
+            mediaController?.playbackState?.let {
+                binding.nowPlayingSeekBar.progress = it.position.toInt()
+                binding.nowPlayingStartTime.text = android.text.format.DateUtils.formatElapsedTime(it.position / 1000)
+            }
+            seekBarUpdateHandler.postDelayed(seekBarUpdateRunnable, 1000)
+        }
+        seekBarUpdateHandler.post(seekBarUpdateRunnable)
+    }
+
+    private fun stopSeekBarUpdate() {
+        if (::seekBarUpdateRunnable.isInitialized) {
+            seekBarUpdateHandler.removeCallbacks(seekBarUpdateRunnable)
+        }
+    }
+
+    private fun getSongsFromPhone(): ArrayList<Songs> {
+        val arrayList = ArrayList<Songs>()
+        try {
+            val contentResolver = myActivity.contentResolver
+            val songUri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+            val projection = arrayOf(
+                MediaStore.Audio.Media._ID, MediaStore.Audio.Media.TITLE, MediaStore.Audio.Media.ARTIST,
+                MediaStore.Audio.Media.DATA, MediaStore.Audio.Media.DATE_ADDED, MediaStore.Audio.Media.ALBUM_ID
+            )
+            val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0"
+            val cursor = contentResolver.query(songUri, projection, selection, null, null)
+
+            cursor?.use {
+                val idColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+                val titleColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
+                val artistColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
+                val dataColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
+                val dateColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
+                val albumIdColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
+
+                while (it.moveToNext()) {
+                    arrayList.add(
+                        Songs(
+                            it.getLong(idColumn), it.getString(titleColumn), it.getString(artistColumn),
+                            it.getString(dataColumn), it.getLong(dateColumn), it.getLong(albumIdColumn)
+                        )
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            // Handle exceptions, e.g., SecurityException if permissions are revoked
+        }
+        return arrayList
     }
 
     override fun onCreateOptionsMenu(menu: Menu, inflater: MenuInflater) {
@@ -417,85 +292,37 @@ class HomeFragment : Fragment() {
         super.onCreateOptionsMenu(menu, inflater)
     }
 
-
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        val switcher = item?.itemId
-        if (switcher == R.id.action_sort_ascending) {
-            val editorOne =
-                myActivity?.getSharedPreferences("action_sort", Context.MODE_PRIVATE)?.edit()
-            editorOne?.putString("action_sort_recent", "false")
-            editorOne?.putString("action_sort_ascending", "true")
-            editorOne?.apply()
-            if (getSongsList != null) {
-                Collections.sort(
-                    getSongsList,
-                    Songs.CREATOR.Statified.nameComparator
-                )
+        val editor = myActivity.getSharedPreferences("action_sort", Context.MODE_PRIVATE).edit()
+        when (item.itemId) {
+            R.id.action_sort_ascending -> {
+                editor.putString("action_sort_ascending", "true")
+                editor.putString("action_sort_recent", "false")
             }
-            _mainScreenAdapter?.notifyDataSetChanged()
-            return false
-        } else if (switcher == R.id.action_sort_recent) {
-            val editorTwo = myActivity?.getSharedPreferences("action_sort", Context.MODE_PRIVATE)?.edit()
-            editorTwo?.let {
-                it.putString("action_sort_recent", "true")
-                it.putString("action_sort_ascending", "false")
-                it.apply()
+            R.id.action_sort_recent -> {
+                editor.putString("action_sort_ascending", "false")
+                editor.putString("action_sort_recent", "true")
             }
-            if (getSongsList != null) {
-                Collections.sort(
-                    getSongsList,
-                    Songs.CREATOR.Statified.dateComparator
-                )
-            }
-            _mainScreenAdapter?.notifyDataSetChanged()
-            return false
+            else -> return super.onOptionsItemSelected(item)
         }
-        return super.onOptionsItemSelected(item)
+        editor.apply()
+        applySorting()
+        return true
     }
 
-    fun getSongsFromPhone(): ArrayList<Songs> {
-        val arrayList = ArrayList<Songs>()
-        val contentResolver = myActivity.contentResolver
-        val songUri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
-        val projection = arrayOf(
-            MediaStore.Audio.Media._ID,
-            MediaStore.Audio.Media.TITLE,
-            MediaStore.Audio.Media.ARTIST,
-            MediaStore.Audio.Media.DATE_ADDED,
-            MediaStore.Audio.Media.ALBUM_ID
-        )
-        val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0"
-        val cursor = contentResolver.query(songUri, projection, selection, null, null)
-
-        cursor?.use {
-            val idColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
-            val titleColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
-            val artistColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
-            val dateAddedColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
-            val albumIdColumn =
-                it.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
-
-            while (it.moveToNext()) {
-                val id = it.getLong(idColumn)
-                val title = it.getString(titleColumn)
-                val artist = it.getString(artistColumn)
-                val dateAdded = it.getLong(dateAddedColumn)
-                val albumId = it.getLong(albumIdColumn)
-                val contentUri =
-                    ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
-
-                arrayList.add(
-                    Songs(
-                        id,
-                        title,
-                        artist,
-                        contentUri.toString(),
-                        dateAdded,
-                        albumId
-                    )
-                )
-            }
+    private fun applySorting() {
+        val prefs = myActivity.getSharedPreferences("action_sort", Context.MODE_PRIVATE)
+        val sortAsc = prefs.getString("action_sort_ascending", "true").toBoolean()
+        if (sortAsc) {
+            Collections.sort(getSongsList, Songs.nameComparator)
+        } else {
+            Collections.sort(getSongsList, Songs.dateComparator)
         }
-        return arrayList
+        mainScreenAdapter?.notifyDataSetChanged()
+    }
+
+    override fun onDestroyView() {
+        super.onDestroyView()
+        _binding = null
     }
 }

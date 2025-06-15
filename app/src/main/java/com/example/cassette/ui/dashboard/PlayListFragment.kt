@@ -9,15 +9,15 @@ import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.Toast
 import androidx.fragment.app.Fragment
-import androidx.navigation.fragment.findNavController
+import androidx.navigation.fragment.findNavController // ADD THIS IMPORT
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.example.cassette.R
 import com.example.cassette.databinding.FragmentPlayListBinding
-import com.example.cassette.data.Playlist // CORRECTED IMPORT
-import com.example.cassette.data.adapters.PlaylistAdapter // CORRECTED IMPORT
-import com.example.cassette.data.databases.EchoDatabase // CORRECTED IMPORT
+import com.example.cassette.data.Playlist
+import com.example.cassette.data.adapters.PlaylistAdapter
+import com.example.cassette.data.databases.EchoDatabase
 import java.util.ArrayList
 
 class PlayListFragment : Fragment() {
@@ -39,7 +39,7 @@ class PlayListFragment : Fragment() {
     override fun onAttach(context: Context) {
         super.onAttach(context)
         myContext = context
-        echoDatabase = EchoDatabase(context)
+        echoDatabase = EchoDatabase(context) // Initialize database
     }
 
     override fun onCreateView(
@@ -71,9 +71,10 @@ class PlayListFragment : Fragment() {
     // --- Playlist Management Logic ---
 
     private fun loadPlaylists() {
-        playlists = echoDatabase?.getPlaylists()
+        playlists = echoDatabase?.getPlaylists() // Get playlists from DB
         playlists?.let {
             if (it.isEmpty()) {
+                // Optionally show a message if no playlists exist
                 Toast.makeText(myContext, "No playlists found. Create one!", Toast.LENGTH_SHORT).show()
             }
             // Initialize adapter with listeners for item click and rename button click
@@ -81,10 +82,16 @@ class PlayListFragment : Fragment() {
                 it,
                 myContext!!,
                 { playlist, position ->
-                    Toast.makeText(myContext, "Clicked playlist: ${playlist.playlistName}", Toast.LENGTH_SHORT).show()
-                    // TODO: Implement navigation to a new fragment showing songs in this playlist
+                    // --- HANDLE PLAYLIST ITEM CLICK: NAVIGATE TO PLAYLIST SONGS ---
+                    val bundle = Bundle().apply {
+                        putLong("playlistID", playlist.playlistID)
+                        putString("playlistName", playlist.playlistName)
+                    }
+                    findNavController().navigate(R.id.navigation_playlist, bundle)
+                    // --- END NAVIGATION LOGIC ---
                 }
             ) { playlist, position ->
+                // Handle rename button click for a playlist
                 showRenamePlaylistDialog(playlist)
             }
             playlistRecyclerView?.layoutManager = LinearLayoutManager(myContext)
@@ -105,7 +112,7 @@ class PlayListFragment : Fragment() {
                 val newPlaylistId = echoDatabase?.createPlaylist(playlistName)
                 if (newPlaylistId != -1L) {
                     Toast.makeText(myContext, "Playlist '$playlistName' created!", Toast.LENGTH_SHORT).show()
-                    loadPlaylists()
+                    loadPlaylists() // Refresh list
                 } else {
                     Toast.makeText(myContext, "Failed to create playlist.", Toast.LENGTH_SHORT).show()
                 }
@@ -122,7 +129,7 @@ class PlayListFragment : Fragment() {
         val builder = AlertDialog.Builder(myContext)
         builder.setTitle("Rename Playlist")
         val input = EditText(myContext)
-        input.setText(playlist.playlistName)
+        input.setText(playlist.playlistName) // Pre-fill with current name
         builder.setView(input)
 
         builder.setPositiveButton("Rename") { dialog, _ ->
@@ -131,7 +138,7 @@ class PlayListFragment : Fragment() {
                 val rowsAffected = echoDatabase?.renamePlaylist(playlist.playlistID, newName)
                 if (rowsAffected ?: 0 > 0) {
                     Toast.makeText(myContext, "Playlist renamed to '$newName'", Toast.LENGTH_SHORT).show()
-                    loadPlaylists()
+                    loadPlaylists() // Refresh list
                 } else {
                     Toast.makeText(myContext, "Failed to rename playlist.", Toast.LENGTH_SHORT).show()
                 }
@@ -147,12 +154,13 @@ class PlayListFragment : Fragment() {
     // --- Lifecycle methods for cleanup ---
     override fun onDestroyView() {
         super.onDestroyView()
-        _binding = null
-        echoDatabase?.close()
+        _binding = null // Clear binding reference
+        echoDatabase?.close() // Close database when fragment view is destroyed
     }
 
     override fun onResume() {
         super.onResume()
+        // Refresh playlists when returning to this fragment (e.g., after creating one)
         loadPlaylists()
     }
 }
