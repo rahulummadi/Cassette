@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -107,13 +108,19 @@ class SongPlayingFragment : Fragment() {
 
         fun pauseSong() {
             mPlayer?.pause()
-            updateSeekBarHandler.removeCallbacks(updateSeekBarRunnable!!)
+            updateSeekBarRunnable?.let {
+                updateSeekBarHandler.removeCallbacks(it)
+            } ?: Log.i("pauseSong", "updateSeekBarRunnable is null")
+
             currentSongHelper?.isPlaying = false
         }
 
         fun resumeSong() {
             mPlayer?.start()
-            updateSeekBarHandler.postDelayed(updateSeekBarRunnable!!, 0)
+            updateSeekBarRunnable?.let {
+                updateSeekBarHandler.postDelayed(it, 0)
+            } ?: Log.i("resumeSong", "updateSeekBarRunnable is null")
+
             currentSongHelper?.isPlaying = true
         }
 
@@ -300,13 +307,22 @@ class SongPlayingFragment : Fragment() {
 
         // Set up click listeners for playback controls
         playPauseButton?.setOnClickListener {
-            if (Statified.mPlayer?.isPlaying == true) {
-                Statified.pauseSong()
+            val player = Statified.mPlayer
+            val currentSong = Statified.currentSong
+            val context = Statified.myContext
+
+            if (player != null && currentSong != null && context != null) {
+                if (player.isPlaying) {
+                    Statified.pauseSong()
+                } else {
+                    Statified.resumeSong()
+                }
+                updatePlayPauseButtonIcon()
             } else {
-                Statified.resumeSong()
+                Toast.makeText(myActivity, "No song is selected or player not initialized.", Toast.LENGTH_SHORT).show()
             }
-            updatePlayPauseButtonIcon() // Update local icon after action
         }
+
 
         previousButton?.setOnClickListener { Statified.playPreviousSong() }
         nextButton?.setOnClickListener { Statified.playNextSong() }

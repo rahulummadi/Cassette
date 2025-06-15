@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.media.MediaPlayer
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
 import android.view.LayoutInflater
@@ -80,8 +81,11 @@ class HomeFragment : Fragment() {
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        val audioPermissionGranted = permissions[Manifest.permission.READ_MEDIA_AUDIO] ?: false
-        val recordAudioGranted = permissions[Manifest.permission.RECORD_AUDIO] ?: false
+
+        val audioPermissionGranted = permissions[Manifest.permission.READ_MEDIA_AUDIO] == true ||
+                permissions[Manifest.permission.READ_EXTERNAL_STORAGE] == true
+
+        val recordAudioGranted = permissions[Manifest.permission.RECORD_AUDIO] == true
 
         if (audioPermissionGranted) {
             loadSongsIntoUI()
@@ -97,6 +101,7 @@ class HomeFragment : Fragment() {
     }
 
 
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -104,7 +109,6 @@ class HomeFragment : Fragment() {
     ): View {
         _binding = FragmentHomeBinding.inflate(inflater, container, false)
         val root: View = binding.root
-
         // Link all UI elements using binding
         visibleLayout = binding.visibleLayout
         noSongs = binding.noSongs
@@ -204,14 +208,26 @@ class HomeFragment : Fragment() {
     }
 
     private fun checkAndRequestPermissions() {
-        val permissionsToRequest = ArrayList<String>()
-        if (ContextCompat.checkSelfPermission(
-                myActivity,
-                Manifest.permission.READ_MEDIA_AUDIO
-            ) != PackageManager.PERMISSION_GRANTED
-        ) {
-            permissionsToRequest.add(Manifest.permission.READ_MEDIA_AUDIO)
+        val permissionsToRequest = mutableListOf<String>()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(
+                    myActivity,
+                    Manifest.permission.READ_MEDIA_AUDIO
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                permissionsToRequest.add(Manifest.permission.READ_MEDIA_AUDIO)
+            }
+        } else {
+            if (ContextCompat.checkSelfPermission(
+                    myActivity,
+                    Manifest.permission.READ_EXTERNAL_STORAGE
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                permissionsToRequest.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+            }
         }
+
         if (ContextCompat.checkSelfPermission(
                 myActivity,
                 Manifest.permission.RECORD_AUDIO
@@ -226,6 +242,8 @@ class HomeFragment : Fragment() {
             loadSongsIntoUI()
         }
     }
+
+
 
     private fun loadSongsIntoUI() {
         getSongsList = getSongsFromPhone()
@@ -373,7 +391,7 @@ class HomeFragment : Fragment() {
     override fun onPause() {
         super.onPause()
         // Stop mini-player's seek bar updates
-        SongPlayingFragment.Statified.updateSeekBarHandler.removeCallbacks(SongPlayingFragment.Statified.updateSeekBarRunnable!!)
+       // SongPlayingFragment.Statified.updateSeekBarHandler.removeCallbacks(SongPlayingFragment.Statified.updateSeekBarRunnable!!)
     }
 
     override fun onDestroy() {
