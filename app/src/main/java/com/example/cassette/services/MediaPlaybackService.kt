@@ -100,7 +100,13 @@ class MediaPlaybackService : MediaBrowserServiceCompat(), MediaPlayer.OnPrepared
         val metadataBuilder = MediaMetadataCompat.Builder()
             .putString(MediaMetadataCompat.METADATA_KEY_TITLE, song.songTitle)
             .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, song.artist)
-            .putString(MediaMetadataCompat.METADATA_KEY_ALBUM_ART_URI, artUri.toString()) // <-- ADDED THIS LINE
+            .putString(MediaMetadataCompat.METADATA_KEY_ALBUM_ART_URI, artUri.toString())
+            .putString(MediaMetadataCompat.METADATA_KEY_MEDIA_ID, song.songID.toString())
+            .putString(MediaMetadataCompat.METADATA_KEY_MEDIA_URI, song.songData)
+
+            // NEW: Add albumID and dateAdded to the metadata bundle
+            .putLong("album_id", song.albumID)
+            .putLong("date_added", song.dateAdded)
 
         mediaSession?.setMetadata(metadataBuilder.build())
     }

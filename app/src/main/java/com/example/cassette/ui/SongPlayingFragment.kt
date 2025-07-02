@@ -21,6 +21,7 @@ import com.example.cassette.R
 import com.example.cassette.data.Songs
 import com.example.cassette.databinding.FragmentSongPlayingBinding
 import com.example.cassette.services.MediaPlaybackService
+import com.example.cassette.ui.dialogs.AddSongToPlaylistDialog
 import java.util.concurrent.TimeUnit
 
 class SongPlayingFragment : Fragment() {
@@ -31,7 +32,6 @@ class SongPlayingFragment : Fragment() {
     private lateinit var mediaBrowser: MediaBrowserCompat
     private var mediaController: MediaControllerCompat? = null
 
-    // NEW: Handler for updating seek bar
     private val seekBarUpdateHandler = Handler(Looper.getMainLooper())
     private lateinit var seekBarUpdateRunnable: Runnable
 
@@ -45,14 +45,12 @@ class SongPlayingFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-
         mediaBrowser = MediaBrowserCompat(
             requireContext(),
             ComponentName(requireContext(), MediaPlaybackService::class.java),
             connectionCallbacks,
-            null // optional Bundle
+            null
         )
-        // FIXED: Call setupClickListeners so the buttons work
         setupClickListeners()
     }
 
@@ -67,7 +65,6 @@ class SongPlayingFragment : Fragment() {
         super.onStop()
         mediaController?.unregisterCallback(controllerCallback)
         mediaBrowser.disconnect()
-        // NEW: Stop seek bar updates when the screen is not visible
         stopSeekBarUpdate()
     }
 
@@ -77,20 +74,17 @@ class SongPlayingFragment : Fragment() {
                 registerCallback(controllerCallback)
             }
 
-            // --- THIS IS THE MAIN FIX ---
-            // Check if arguments were passed. If not, we came from the mini-player.
+            // ✅ THIS LOGIC IS CRUCIAL
+            // If arguments were passed, play the new song.
             if (arguments?.getParcelable<Songs>("songData") != null) {
-                // Arguments exist, so play the new song from the list.
                 getSongDataAndPlay()
             } else {
-                // No arguments, so just sync the UI with the service's current state.
+                // Otherwise, just sync with the current service state.
                 updateUiWithMetadata(mediaController?.metadata)
                 updateUiWithPlaybackState(mediaController?.playbackState)
             }
         }
-
         override fun onConnectionSuspended() {}
-
         override fun onConnectionFailed() {
             Toast.makeText(requireContext(), "Failed to connect to media service", Toast.LENGTH_SHORT).show()
         }
@@ -100,14 +94,12 @@ class SongPlayingFragment : Fragment() {
         override fun onMetadataChanged(metadata: MediaMetadataCompat?) {
             updateUiWithMetadata(metadata)
         }
-
         override fun onPlaybackStateChanged(state: PlaybackStateCompat?) {
             updateUiWithPlaybackState(state)
         }
     }
 
     private fun getSongDataAndPlay() {
-        // These are now local variables, not properties of the Fragment
         val currentSong: Songs? = arguments?.getParcelable("songData")
         val songList: ArrayList<Songs>? = arguments?.getParcelableArrayList("songList")
         val currentPosition: Int = arguments?.getInt("songPosition", 0) ?: 0
@@ -129,7 +121,6 @@ class SongPlayingFragment : Fragment() {
             binding.endTime.text = formatDuration(duration)
             binding.seekBar.max = duration.toInt()
 
-            // FIXED: Load album art from the URI provided in metadata
             val albumArtUriString = it.getString(MediaMetadataCompat.METADATA_KEY_ALBUM_ART_URI)
             albumArtUriString?.let {
                 Glide.with(this@SongPlayingFragment)
@@ -143,22 +134,18 @@ class SongPlayingFragment : Fragment() {
 
     private fun updateUiWithPlaybackState(state: PlaybackStateCompat?) {
         binding.seekBar.progress = state?.position?.toInt() ?: 0
-
         when (state?.state) {
             PlaybackStateCompat.STATE_PLAYING -> {
                 binding.playPauseButton.setImageResource(R.drawable.pause_icon)
-                startSeekBarUpdate() // NEW: Start updating seek bar
+                startSeekBarUpdate()
             }
-            PlaybackStateCompat.STATE_PAUSED,
-            PlaybackStateCompat.STATE_STOPPED,
-            PlaybackStateCompat.STATE_NONE -> {
+            else -> {
                 binding.playPauseButton.setImageResource(R.drawable.play_icon)
-                stopSeekBarUpdate() // NEW: Stop updating seek bar
+                stopSeekBarUpdate()
             }
         }
     }
 
-    // NEW: Function to start updating the seek bar every second
     private fun startSeekBarUpdate() {
         seekBarUpdateRunnable = Runnable {
             mediaController?.playbackState?.let {
@@ -170,7 +157,6 @@ class SongPlayingFragment : Fragment() {
         seekBarUpdateHandler.post(seekBarUpdateRunnable)
     }
 
-    // NEW: Function to stop the seek bar updates
     private fun stopSeekBarUpdate() {
         if (::seekBarUpdateRunnable.isInitialized) {
             seekBarUpdateHandler.removeCallbacks(seekBarUpdateRunnable)
@@ -178,6 +164,24 @@ class SongPlayingFragment : Fragment() {
     }
 
     private fun setupClickListeners() {
+        binding.favouriteIcon.setOnClickListener {
+            val metadata = mediaController?.metadata
+            if (metadata != null) {
+                val song = Songs(
+                    songID = metadata.getString(MediaMetadataCompat.METADATA_KEY_MEDIA_ID)?.toLong() ?: 0L,
+                    songTitle = metadata.getString(MediaMetadataCompat.METADATA_KEY_TITLE),
+                    artist = metadata.getString(MediaMetadataCompat.METADATA_KEY_ARTIST),
+                    songData = metadata.getString(MediaMetadataCompat.METADATA_KEY_MEDIA_URI),
+                    dateAdded = metadata.getLong("date_added"),
+                    albumID = metadata.getLong("album_id")
+                )
+                val dialog = AddSongToPlaylistDialog.newInstance(song)
+                dialog.show(childFragmentManager, "AddSongToPlaylistDialog")
+            } else {
+                Toast.makeText(context, "No song currently playing.", Toast.LENGTH_SHORT).show()
+            }
+        }
+
         binding.playPauseButton.setOnClickListener {
             val playbackState = mediaController?.playbackState?.state
             if (playbackState == PlaybackStateCompat.STATE_PLAYING) {
@@ -203,11 +207,9 @@ class SongPlayingFragment : Fragment() {
     }
 
     private fun formatDuration(duration: Long): String {
-        return String.format(
-            "%02d:%02d",
+        return String.format("%02d:%02d",
             TimeUnit.MILLISECONDS.toMinutes(duration),
-            TimeUnit.MILLISECONDS.toSeconds(duration) -
-                    TimeUnit.MINUTES.toSeconds(TimeUnit.MILLISECONDS.toMinutes(duration))
+            TimeUnit.MILLISECONDS.toSeconds(duration) - TimeUnit.MINUTES.toSeconds(TimeUnit.MILLISECONDS.toMinutes(duration))
         )
     }
 
