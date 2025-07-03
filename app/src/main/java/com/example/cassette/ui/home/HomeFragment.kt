@@ -54,7 +54,8 @@ class HomeFragment : Fragment() {
         if (isGranted) {
             loadSongsIntoUI()
         } else {
-            Toast.makeText(myActivity, "Permission denied. Cannot load songs.", Toast.LENGTH_LONG).show()
+            Toast.makeText(myActivity, "Permission denied. Cannot load songs.", Toast.LENGTH_LONG)
+                .show()
             binding.visibleLayout.visibility = View.INVISIBLE
             binding.noSongs.visibility = View.VISIBLE
         }
@@ -102,7 +103,9 @@ class HomeFragment : Fragment() {
         super.onStop()
         mediaController?.unregisterCallback(controllerCallback)
         mediaBrowser.disconnect()
-        seekBarUpdateHandler.removeCallbacks(seekBarUpdateRunnable)
+        if (::seekBarUpdateRunnable.isInitialized) {
+            seekBarUpdateHandler.removeCallbacks(seekBarUpdateRunnable)
+        }
     }
 
     // NEW: Callbacks for connecting to the MediaPlaybackService
@@ -118,8 +121,13 @@ class HomeFragment : Fragment() {
             updateUiWithPlaybackState(playbackState)
         }
 
-        override fun onConnectionSuspended() { mediaController = null }
-        override fun onConnectionFailed() { mediaController = null }
+        override fun onConnectionSuspended() {
+            mediaController = null
+        }
+
+        override fun onConnectionFailed() {
+            mediaController = null
+        }
     }
 
     // NEW: Callback to receive updates from the MediaPlaybackService
@@ -140,6 +148,7 @@ class HomeFragment : Fragment() {
             ) == PackageManager.PERMISSION_GRANTED -> {
                 loadSongsIntoUI()
             }
+
             else -> {
                 requestPermissionLauncher.launch(Manifest.permission.READ_MEDIA_AUDIO)
             }
@@ -199,8 +208,10 @@ class HomeFragment : Fragment() {
             return
         }
         binding.hiddenBarMainScreen.visibility = View.VISIBLE
-        binding.nowPlayingSongTitleBar.text = metadata.getString(MediaMetadataCompat.METADATA_KEY_TITLE)
-        binding.nowPlayingSongArtistBar.text = metadata.getString(MediaMetadataCompat.METADATA_KEY_ARTIST)
+        binding.nowPlayingSongTitleBar.text =
+            metadata.getString(MediaMetadataCompat.METADATA_KEY_TITLE)
+        binding.nowPlayingSongArtistBar.text =
+            metadata.getString(MediaMetadataCompat.METADATA_KEY_ARTIST)
         binding.nowPlayingEndTime.text =
             android.text.format.DateUtils.formatElapsedTime(metadata.getLong(MediaMetadataCompat.METADATA_KEY_DURATION) / 1000)
 
@@ -227,6 +238,7 @@ class HomeFragment : Fragment() {
                 binding.nowPlayingPlayPauseButton.setImageResource(R.drawable.pause_icon)
                 startSeekBarUpdate()
             }
+
             PlaybackStateCompat.STATE_PAUSED, PlaybackStateCompat.STATE_STOPPED, PlaybackStateCompat.STATE_NONE -> {
                 binding.nowPlayingPlayPauseButton.setImageResource(R.drawable.play_icon)
                 stopSeekBarUpdate()
@@ -239,7 +251,8 @@ class HomeFragment : Fragment() {
         seekBarUpdateRunnable = Runnable {
             mediaController?.playbackState?.let {
                 binding.nowPlayingSeekBar.progress = it.position.toInt()
-                binding.nowPlayingStartTime.text = android.text.format.DateUtils.formatElapsedTime(it.position / 1000)
+                binding.nowPlayingStartTime.text =
+                    android.text.format.DateUtils.formatElapsedTime(it.position / 1000)
             }
             seekBarUpdateHandler.postDelayed(seekBarUpdateRunnable, 1000)
         }
@@ -258,8 +271,12 @@ class HomeFragment : Fragment() {
             val contentResolver = myActivity.contentResolver
             val songUri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
             val projection = arrayOf(
-                MediaStore.Audio.Media._ID, MediaStore.Audio.Media.TITLE, MediaStore.Audio.Media.ARTIST,
-                MediaStore.Audio.Media.DATA, MediaStore.Audio.Media.DATE_ADDED, MediaStore.Audio.Media.ALBUM_ID
+                MediaStore.Audio.Media._ID,
+                MediaStore.Audio.Media.TITLE,
+                MediaStore.Audio.Media.ARTIST,
+                MediaStore.Audio.Media.DATA,
+                MediaStore.Audio.Media.DATE_ADDED,
+                MediaStore.Audio.Media.ALBUM_ID
             )
             val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0"
             val cursor = contentResolver.query(songUri, projection, selection, null, null)
@@ -275,8 +292,12 @@ class HomeFragment : Fragment() {
                 while (it.moveToNext()) {
                     arrayList.add(
                         Songs(
-                            it.getLong(idColumn), it.getString(titleColumn), it.getString(artistColumn),
-                            it.getString(dataColumn), it.getLong(dateColumn), it.getLong(albumIdColumn)
+                            it.getLong(idColumn),
+                            it.getString(titleColumn),
+                            it.getString(artistColumn),
+                            it.getString(dataColumn),
+                            it.getLong(dateColumn),
+                            it.getLong(albumIdColumn)
                         )
                     )
                 }
@@ -299,10 +320,12 @@ class HomeFragment : Fragment() {
                 editor.putString("action_sort_ascending", "true")
                 editor.putString("action_sort_recent", "false")
             }
+
             R.id.action_sort_recent -> {
                 editor.putString("action_sort_ascending", "false")
                 editor.putString("action_sort_recent", "true")
             }
+
             else -> return super.onOptionsItemSelected(item)
         }
         editor.apply()
