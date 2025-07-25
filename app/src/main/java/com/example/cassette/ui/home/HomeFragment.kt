@@ -6,17 +6,24 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.MediaStore
 import android.support.v4.media.MediaBrowserCompat
 import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaControllerCompat
 import android.support.v4.media.session.PlaybackStateCompat
 import android.view.*
+import android.widget.SeekBar
 import android.widget.Toast
+import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.RequiresApi
+import androidx.core.app.ActivityCompat
+import androidx.core.app.ActivityCompat.shouldShowRequestPermissionRationale
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.navigation.fragment.findNavController
@@ -31,6 +38,7 @@ import com.example.cassette.services.MediaPlaybackService
 import java.util.*
 import kotlin.collections.ArrayList
 
+@RequiresApi(Build.VERSION_CODES.M)
 class HomeFragment : Fragment() {
 
     private var _binding: FragmentHomeBinding? = null
@@ -39,6 +47,7 @@ class HomeFragment : Fragment() {
     private lateinit var myActivity: Activity
     private var mainScreenAdapter: MainScreenAdapter? = null
     private var getSongsList: ArrayList<Songs> = ArrayList()
+    private lateinit var requestPermissionLauncher: ActivityResultLauncher<String>
 
     // NEW: MediaBrowser and MediaController for service communication
     private lateinit var mediaBrowser: MediaBrowserCompat
@@ -46,20 +55,7 @@ class HomeFragment : Fragment() {
 
     // NEW: Handler for updating seek bar
     private val seekBarUpdateHandler = Handler(Looper.getMainLooper())
-    private lateinit var seekBarUpdateRunnable: Runnable
-
-    private val requestPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { isGranted: Boolean ->
-        if (isGranted) {
-            loadSongsIntoUI()
-        } else {
-            Toast.makeText(myActivity, "Permission denied. Cannot load songs.", Toast.LENGTH_LONG)
-                .show()
-            binding.visibleLayout.visibility = View.INVISIBLE
-            binding.noSongs.visibility = View.VISIBLE
-        }
-    }
+    private var seekBarUpdateRunnable: Runnable? = null
 
     override fun onAttach(context: Context) {
         super.onAttach(context)
@@ -70,10 +66,30 @@ class HomeFragment : Fragment() {
         super.onCreate(savedInstanceState)
         setHasOptionsMenu(true) // Enable options menu in fragment
 
+        //Registering permission launcher before view is created
+        requestPermissionLauncher = registerForActivityResult(
+            ActivityResultContracts.RequestPermission()
+        ) { isGranted: Boolean ->
+            if (isGranted) {
+                loadSongsIntoUI()
+            } else {
+                Toast.makeText(
+                    requireContext(),
+                    "Permission denied. Cannot load songs.",
+                    Toast.LENGTH_LONG
+                ).show()
+                binding.visibleLayout.visibility = View.INVISIBLE
+                binding.noSongs.visibility = View.VISIBLE
+            }
+        }
+
         // NEW: Initialize the MediaBrowser
         mediaBrowser = MediaBrowserCompat(
             requireContext(),
-            ComponentName(requireContext(), MediaPlaybackService::class.java),
+            ComponentName(
+                requireContext(), MediaPlaybackService::
+                class.java
+            ),
             connectionCallbacks,
             null
         )
@@ -90,6 +106,67 @@ class HomeFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         checkAndRequestPermissions()
         setupClickListeners()
+
+        binding.nowPlayingSeekBar.setOnSeekBarChangeListener(object :
+            SeekBar.OnSeekBarChangeListener {
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                stopSeekBarUpdate() // pause updates while user is dragging
+            }
+
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                seekBar?.let {
+                    val newPosition = it.progress.toLong()
+                    mediaController?.transportControls?.seekTo(newPosition)
+                    startSeekBarUpdate() // resume updates
+                }
+            }
+
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (fromUser) {
+                    // Optional: update start time as user drags
+                    binding.nowPlayingStartTime.text =
+                        android.text.format.DateUtils.formatElapsedTime((progress / 1000).toLong())
+                }
+            }
+        })
+
+    }
+
+    private fun checkAndRequestPermissions() {
+        val permission = getMediaPermission()
+
+        when {
+            ContextCompat.checkSelfPermission(
+                requireContext(),
+                permission
+            ) == PackageManager.PERMISSION_GRANTED -> {
+                // Already granted
+                loadSongsIntoUI()
+            }
+
+            shouldShowRequestPermissionRationale(permission) -> {
+                // Optional: Explain why permission is needed
+                Toast.makeText(
+                    requireContext(),
+                    "We need access to your media to load songs.",
+                    Toast.LENGTH_SHORT
+                ).show()
+                requestPermissionLauncher.launch(permission)
+            }
+
+            else -> {
+                //  Request directly
+                requestPermissionLauncher.launch(permission)
+            }
+        }
+    }
+
+    private fun getMediaPermission(): String {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Manifest.permission.READ_MEDIA_AUDIO
+        } else {
+            Manifest.permission.READ_EXTERNAL_STORAGE
+        }
     }
 
     override fun onStart() {
@@ -103,8 +180,10 @@ class HomeFragment : Fragment() {
         super.onStop()
         mediaController?.unregisterCallback(controllerCallback)
         mediaBrowser.disconnect()
-        if (::seekBarUpdateRunnable.isInitialized) {
-            seekBarUpdateHandler.removeCallbacks(seekBarUpdateRunnable)
+
+        seekBarUpdateRunnable?.let {
+            seekBarUpdateHandler.removeCallbacks(it)
+            seekBarUpdateRunnable = null
         }
     }
 
@@ -140,20 +219,20 @@ class HomeFragment : Fragment() {
             updateUiWithPlaybackState(state)
         }
     }
+    /*
+        private fun checkAndRequestPermissions() {
+            when {
+                ContextCompat.checkSelfPermission(
+                    myActivity, Manifest.permission.READ_MEDIA_AUDIO
+                ) == PackageManager.PERMISSION_GRANTED -> {
+                    loadSongsIntoUI()
+                }
 
-    private fun checkAndRequestPermissions() {
-        when {
-            ContextCompat.checkSelfPermission(
-                myActivity, Manifest.permission.READ_MEDIA_AUDIO
-            ) == PackageManager.PERMISSION_GRANTED -> {
-                loadSongsIntoUI()
+                else -> {
+                    requestPermissionLauncher.launch(Manifest.permission.READ_MEDIA_AUDIO)
+                }
             }
-
-            else -> {
-                requestPermissionLauncher.launch(Manifest.permission.READ_MEDIA_AUDIO)
-            }
-        }
-    }
+        }*/
 
     private fun loadSongsIntoUI() {
         getSongsList = getSongsFromPhone()
@@ -201,6 +280,15 @@ class HomeFragment : Fragment() {
         binding.nowPlayingPreviousButton.setOnClickListener { mediaController?.transportControls?.skipToPrevious() }
     }
 
+    fun uriExists(context: Context, uri: Uri): Boolean {
+        return try {
+            context.contentResolver.openInputStream(uri)?.close()
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     // NEW: Function to update the mini-player based on service metadata
     private fun updateUiWithMetadata(metadata: MediaMetadataCompat?) {
         if (metadata == null) {
@@ -217,12 +305,16 @@ class HomeFragment : Fragment() {
 
         // NEW: Get the album art URI from the metadata and load it with Glide
         val albumArtUriString = metadata.getString(MediaMetadataCompat.METADATA_KEY_ALBUM_ART_URI)
-        albumArtUriString?.let {
+        val albumArtUri = Uri.parse(albumArtUriString)
+        if (uriExists(requireContext(), albumArtUri)) {
             Glide.with(this@HomeFragment)
-                .load(Uri.parse(it))
-                .placeholder(R.drawable.now_playing_bar_eq_image) // Make sure this drawable exists
-                .error(R.drawable.now_playing_bar_eq_image) // Make sure this drawable exists
+                .load(albumArtUri)
+                .placeholder(R.drawable.now_playing_bar_eq_image)
+                .error(R.drawable.now_playing_bar_eq_image)
                 .into(binding.nowPlayingCoverArt)
+        } else {
+            // Load fallback if Uri is broken
+            binding.nowPlayingCoverArt.setImageResource(R.drawable.now_playing_bar_eq_image)
         }
     }
 
@@ -239,31 +331,62 @@ class HomeFragment : Fragment() {
                 startSeekBarUpdate()
             }
 
-            PlaybackStateCompat.STATE_PAUSED, PlaybackStateCompat.STATE_STOPPED, PlaybackStateCompat.STATE_NONE -> {
+            PlaybackStateCompat.STATE_PAUSED,
+            PlaybackStateCompat.STATE_STOPPED,
+            PlaybackStateCompat.STATE_NONE -> {
                 binding.nowPlayingPlayPauseButton.setImageResource(R.drawable.play_icon)
                 stopSeekBarUpdate()
             }
         }
-        binding.nowPlayingSeekBar.progress = state.position.toInt()
+
+        // Optional: move this into startSeekBarUpdate()
+        binding.nowPlayingSeekBar.progress = getCurrentPlaybackPosition(state).toInt()
+    }
+
+    private fun getCurrentPlaybackPosition(state: PlaybackStateCompat): Long {
+        return if (state.state == PlaybackStateCompat.STATE_PLAYING) {
+            val timeDelta = SystemClock.elapsedRealtime() - state.lastPositionUpdateTime
+            state.position + timeDelta
+        } else {
+            state.position
+        }
     }
 
     private fun startSeekBarUpdate() {
-        seekBarUpdateRunnable = Runnable {
-            mediaController?.playbackState?.let {
-                binding.nowPlayingSeekBar.progress = it.position.toInt()
-                binding.nowPlayingStartTime.text =
-                    android.text.format.DateUtils.formatElapsedTime(it.position / 1000)
+        stopSeekBarUpdate() // Prevent duplication
+
+        seekBarUpdateRunnable = object : Runnable {
+            override fun run() {
+                val playbackState = mediaController?.playbackState
+                val metadata = mediaController?.metadata
+
+                if (playbackState != null && metadata != null) {
+                    val duration = metadata.getLong(MediaMetadataCompat.METADATA_KEY_DURATION)
+                    val currentPosition = getCurrentPlaybackPosition(playbackState)
+
+                    binding.nowPlayingSeekBar.max = duration.toInt()
+                    binding.nowPlayingSeekBar.progress = currentPosition.toInt()
+
+                    binding.nowPlayingStartTime.text =
+                        android.text.format.DateUtils.formatElapsedTime(currentPosition / 1000)
+                    binding.nowPlayingEndTime.text =
+                        android.text.format.DateUtils.formatElapsedTime(duration / 1000)
+                }
+
+                seekBarUpdateHandler.postDelayed(this, 1000)
             }
-            seekBarUpdateHandler.postDelayed(seekBarUpdateRunnable, 1000)
         }
-        seekBarUpdateHandler.post(seekBarUpdateRunnable)
+
+        seekBarUpdateHandler.post(seekBarUpdateRunnable!!)
     }
 
     private fun stopSeekBarUpdate() {
-        if (::seekBarUpdateRunnable.isInitialized) {
-            seekBarUpdateHandler.removeCallbacks(seekBarUpdateRunnable)
+        seekBarUpdateRunnable?.let {
+            seekBarUpdateHandler.removeCallbacks(it)
+            seekBarUpdateRunnable = null
         }
     }
+
 
     private fun getSongsFromPhone(): ArrayList<Songs> {
         val arrayList = ArrayList<Songs>()
